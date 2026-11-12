@@ -665,6 +665,8 @@ type openAIAccountCandidateScore struct {
 	errorRate float64
 	ttft      float64
 	hasTTFT   bool
+	// effectiveConcurrency 是本次调度实际使用的并发上限（自适应窗口与配置的较小值）。
+	effectiveConcurrency int
 }
 
 type openAIAccountCandidateHeap []openAIAccountCandidateScore
@@ -865,6 +867,7 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 	filtered []*Account,
 	loadMap map[int64]*AccountLoadInfo,
 ) openAIAccountLoadPlan {
+	windows := s.service.adaptiveWindowsPtr(ctx, filtered)
 	allCandidates := make([]openAIAccountCandidateScore, 0, len(filtered))
 	for _, account := range filtered {
 		loadInfo, loadKnown := loadMap[account.ID]
@@ -876,13 +879,20 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 		if s.stats != nil {
 			errorRate, ttft, hasTTFT = s.stats.snapshot(account.ID)
 		}
+		effective := account.Concurrency
+		if effective > 0 {
+			if window, ok := adaptiveWindowFor(windows, account.ID); ok && window < effective {
+				effective = window
+			}
+		}
 		allCandidates = append(allCandidates, openAIAccountCandidateScore{
-			account:   account,
-			loadInfo:  loadInfo,
-			loadKnown: loadKnown,
-			errorRate: errorRate,
-			ttft:      ttft,
-			hasTTFT:   hasTTFT,
+			account:              account,
+			effectiveConcurrency: effective,
+			loadInfo:             loadInfo,
+			loadKnown:            loadKnown,
+			errorRate:            errorRate,
+			ttft:                 ttft,
+			hasTTFT:              hasTTFT,
 		})
 	}
 
@@ -1188,12 +1198,16 @@ func (s *defaultOpenAIAccountScheduler) tryAcquireOpenAISelectionOrderWithBudget
 		if candidate.account == nil {
 			continue
 		}
-		if candidate.loadKnown && candidate.account.Concurrency > 0 &&
-			candidate.loadInfo.CurrentConcurrency >= candidate.account.Concurrency {
+		concurrency := candidate.effectiveConcurrency
+		if concurrency <= 0 {
+			concurrency = candidate.account.Concurrency
+		}
+		if candidate.loadKnown && concurrency > 0 &&
+			candidate.loadInfo.CurrentConcurrency >= concurrency {
 			continue
 		}
 
-		result, attempted, acquireErr := s.tryAcquireOpenAIAccountSlot(ctx, candidate.account.ID, candidate.account.Concurrency, budget)
+		result, attempted, acquireErr := s.tryAcquireOpenAIAccountSlot(ctx, candidate.account.ID, concurrency, budget)
 		if !attempted {
 			break
 		}
@@ -1437,6 +1451,8 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 
 	filterStats := openAISelectionFilterStats{pool: len(accounts)}
 	filtered := make([]*Account, 0, len(accounts))
+	// 账号级自适应并发窗口：nil 表示未启用，负载率分母回退到配置值。
+	windows := s.service.adaptiveWindows(ctx, accounts)
 	loadReq := make([]AccountWithConcurrency, 0, len(accounts))
 	for i := range accounts {
 		account := &accounts[i]
@@ -1477,7 +1493,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		filtered = append(filtered, account)
 		loadReq = append(loadReq, AccountWithConcurrency{
 			ID:             account.ID,
-			MaxConcurrency: account.EffectiveLoadFactor(),
+			MaxConcurrency: s.service.loadDenominator(account, windows),
 		})
 	}
 	if len(filtered) == 0 {
@@ -1598,7 +1614,7 @@ func (s *defaultOpenAIAccountScheduler) trySelectByLoadBalancePool(
 	}
 
 	if s.service.concurrencyService != nil && !budget.acquireExhausted() {
-		loadReq := buildOpenAIAccountLoadRequest(filtered)
+		loadReq := s.buildOpenAIAccountLoadRequest(ctx, filtered)
 		if freshLoadMap, loadErr := s.service.concurrencyService.GetAccountsLoadBatchFresh(ctx, loadReq); loadErr == nil {
 			freshPlan := s.buildOpenAIAccountLoadPlan(ctx, req, filtered, freshLoadMap)
 			if openAICostOverflowExpanded(req, freshPlan) {
@@ -1649,7 +1665,8 @@ func openAICostOverflowExpanded(req OpenAIAccountScheduleRequest, plan openAIAcc
 	return supported > plan.topK || unknown > plan.topK
 }
 
-func buildOpenAIAccountLoadRequest(accounts []*Account) []AccountWithConcurrency {
+func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadRequest(ctx context.Context, accounts []*Account) []AccountWithConcurrency {
+	windows := s.service.adaptiveWindowsPtr(ctx, accounts)
 	loadReq := make([]AccountWithConcurrency, 0, len(accounts))
 	for _, account := range accounts {
 		if account == nil {
@@ -1657,7 +1674,7 @@ func buildOpenAIAccountLoadRequest(accounts []*Account) []AccountWithConcurrency
 		}
 		loadReq = append(loadReq, AccountWithConcurrency{
 			ID:             account.ID,
-			MaxConcurrency: account.EffectiveLoadFactor(),
+			MaxConcurrency: s.service.loadDenominator(account, windows),
 		})
 	}
 	return loadReq
@@ -2571,6 +2588,14 @@ func (s *OpenAIGatewayService) ReportOpenAIAccountScheduleResult(account *Accoun
 	if success {
 		s.openaiOAuth429RetryStartedAt.Delete(accountID)
 		s.clearOpenAIAccountModelTransientState(accountID, normalizeOpenAIAccountModelTransientModel(model))
+	}
+	// 账号级自适应并发窗口：每次上游尝试结束都上报一次结果，窗口据此自动收敛。
+	if s != nil && s.adaptiveConcurrency != nil {
+		var reportErr error
+		if len(observedErr) > 0 {
+			reportErr = observedErr[0]
+		}
+		s.adaptiveConcurrency.Report(context.Background(), accountID, account.Concurrency, success, reportErr)
 	}
 	scheduler := s.getOpenAIAccountScheduler(context.Background())
 	if scheduler == nil {

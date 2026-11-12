@@ -13,6 +13,15 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// ProvideAdaptiveConcurrencyCache 创建账号级自适应并发窗口缓存。
+func ProvideAdaptiveConcurrencyCache(rdb *redis.Client, cfg *config.Config) service.AdaptiveConcurrencyStore {
+	params := service.DefaultAdaptiveConcurrencyParams()
+	if cfg != nil {
+		params = service.AdaptiveConcurrencyParamsFromConfig(cfg.Gateway.AdaptiveConcurrency)
+	}
+	return NewAdaptiveConcurrencyCache(rdb, params)
+}
+
 // ProvideConcurrencyCache 创建并发控制缓存，从配置读取 TTL 参数
 // 性能优化：TTL 可配置，支持长时间运行的 LLM 请求场景
 func ProvideConcurrencyCache(rdb *redis.Client, cfg *config.Config) service.ConcurrencyCache {
@@ -119,6 +128,7 @@ var ProviderSet = wire.NewSet(
 	NewOpenAI403CounterCache,
 	NewInternal500CounterCache,
 	ProvideConcurrencyCache,
+	ProvideAdaptiveConcurrencyCache,
 	ProvideSessionLimitCache,
 	NewRPMCache,
 	NewUserRPMCache,

@@ -1048,7 +1048,31 @@ const (
 )
 
 // GatewayConfig API网关相关配置
+// GatewayAdaptiveConcurrencyConfig controls the per-account adaptive
+// concurrency window (AIMD). The window shrinks on upstream capacity
+// rejections and grows back slowly on success.
+type GatewayAdaptiveConcurrencyConfig struct {
+	// Enabled 是总开关；关闭后调度行为与未接入自适应窗口时完全一致。
+	Enabled bool `mapstructure:"enabled"`
+	// Alpha 成功时的加性增长系数（w += Alpha / max(w,1)）。
+	Alpha float64 `mapstructure:"alpha"`
+	// Beta 容量型拒绝（503 overloaded）时的乘性下降系数。
+	Beta float64 `mapstructure:"beta"`
+	// Gamma 其他瞬时故障时的乘性下降系数。
+	Gamma float64 `mapstructure:"gamma"`
+	// Holddown 一次容量拒绝后暂停增长的时间，避免刚恢复就被打回。
+	Holddown time.Duration `mapstructure:"holddown"`
+	// IdleReset 空闲多久后开始向配置并发回归。
+	IdleReset time.Duration `mapstructure:"idle_reset"`
+	// IdleStep 每个 IdleReset 周期恢复的窗口值。
+	IdleStep float64 `mapstructure:"idle_step"`
+	// MinWindow 窗口下限，保证账号保留探测容量。
+	MinWindow float64 `mapstructure:"min_window"`
+}
+
 type GatewayConfig struct {
+	// AdaptiveConcurrency 控制账号级自适应并发窗口（AIMD）。
+	AdaptiveConcurrency GatewayAdaptiveConcurrencyConfig `mapstructure:"adaptive_concurrency"`
 	// MinOutputTokens is the minimum max_output_tokens used when
 	// converting Chat Completions or Anthropic requests to Responses.
 	MinOutputTokens int `mapstructure:"min_output_tokens"`
@@ -2527,6 +2551,14 @@ func setDefaults() {
 	viper.SetDefault("gateway.inject_beta_for_apikey", false)
 	viper.SetDefault("gateway.failover_on_400", false)
 	viper.SetDefault("gateway.max_account_switches", 10)
+	viper.SetDefault("gateway.adaptive_concurrency.enabled", true)
+	viper.SetDefault("gateway.adaptive_concurrency.alpha", 0.5)
+	viper.SetDefault("gateway.adaptive_concurrency.beta", 0.5)
+	viper.SetDefault("gateway.adaptive_concurrency.gamma", 0.7)
+	viper.SetDefault("gateway.adaptive_concurrency.holddown", "30s")
+	viper.SetDefault("gateway.adaptive_concurrency.idle_reset", "10m")
+	viper.SetDefault("gateway.adaptive_concurrency.idle_step", 1.0)
+	viper.SetDefault("gateway.adaptive_concurrency.min_window", 1.0)
 	viper.SetDefault("gateway.max_account_switches_gemini", 3)
 	viper.SetDefault("gateway.max_same_account_retries_gemini", 4)
 	viper.SetDefault("gateway.force_codex_cli", false)

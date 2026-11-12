@@ -227,6 +227,8 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 	if len(accounts) == 0 {
 		return nil, ErrNoAvailableAccounts
 	}
+	// 账号级自适应并发窗口（AIMD）：nil 表示未启用，行为与未接入时完全一致。
+	windows := s.adaptiveWindows(ctx, accounts)
 	ctx = s.withWindowCostPrefetch(ctx, accounts)
 	ctx = s.withRPMPrefetch(ctx, accounts)
 
@@ -399,7 +401,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 										// 直接返回会导致后续转发缺少凭证而鉴权失败。
 										return s.newSelectionResult(ctx, stickyAccount, false, nil, &AccountWaitPlan{
 											AccountID:      stickyAccountID,
-											MaxConcurrency: stickyAccount.Concurrency,
+											MaxConcurrency: s.slotConcurrency(stickyAccount, windows),
 											Timeout:        cfg.StickySessionWaitTimeout,
 											MaxWaiting:     cfg.StickySessionMaxWaiting,
 										})
@@ -438,7 +440,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			for _, acc := range routingCandidates {
 				routingLoads = append(routingLoads, AccountWithConcurrency{
 					ID:             acc.ID,
-					MaxConcurrency: acc.EffectiveLoadFactor(),
+					MaxConcurrency: s.loadDenominator(acc, windows),
 				})
 			}
 			routingLoadMap, _ := s.concurrencyService.GetAccountsLoadBatch(ctx, routingLoads)
@@ -480,7 +482,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 
 				// 4. 尝试获取槽位
 				for _, item := range routingAvailable {
-					result, err := s.tryAcquireAccountSlot(ctx, item.account.ID, item.account.Concurrency)
+					result, err := s.tryAcquireAccountSlot(ctx, item.account.ID, s.slotConcurrency(item.account, windows))
 					if err == nil && result.Acquired {
 						// 会话数量限制检查
 						if !s.checkAndRegisterSession(ctx, item.account, sessionHash) {
@@ -508,7 +510,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 					}
 					return s.newSelectionResult(ctx, item.account, false, nil, &AccountWaitPlan{
 						AccountID:      item.account.ID,
-						MaxConcurrency: item.account.Concurrency,
+						MaxConcurrency: s.slotConcurrency(item.account, windows),
 						Timeout:        cfg.StickySessionWaitTimeout,
 						MaxWaiting:     cfg.StickySessionMaxWaiting,
 					})
@@ -566,7 +568,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 				)
 
 				if !clearSticky && platformOK && profitOK && modelSupported && channelOK && modelSchedulable && quotaOK && windowCostOK && rpmOK && schedulable {
-					result, err := s.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
+					result, err := s.tryAcquireAccountSlot(ctx, accountID, s.slotConcurrency(account, windows))
 					if err == nil && result.Acquired {
 						// 会话数量限制检查
 						if !s.checkAndRegisterSession(ctx, account, sessionHash) {
@@ -607,7 +609,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 							)
 							return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
 								AccountID:      accountID,
-								MaxConcurrency: account.Concurrency,
+								MaxConcurrency: s.slotConcurrency(account, windows),
 								Timeout:        cfg.StickySessionWaitTimeout,
 								MaxWaiting:     cfg.StickySessionMaxWaiting,
 							})
@@ -709,7 +711,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 	for _, acc := range candidates {
 		accountLoads = append(accountLoads, AccountWithConcurrency{
 			ID:             acc.ID,
-			MaxConcurrency: acc.EffectiveLoadFactor(),
+			MaxConcurrency: s.loadDenominator(acc, windows),
 		})
 	}
 
@@ -743,15 +745,20 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			if cfg.PreferSoonestReset {
 				candidates = filterBySoonestReset(candidates)
 			}
-			// 3. 取负载率最低的集合
-			candidates = filterByMinLoadRate(candidates)
+			// 3. 自适应窗口启用时按可用余量排序（同等余量优先容量更大的账号），
+			//    否则保持原有的「负载率最低」语义。
+			if windows != nil {
+				candidates = filterByMaxHeadroom(candidates, windows)
+			} else {
+				candidates = filterByMinLoadRate(candidates)
+			}
 			// 4. LRU 选择最久未用的账号
 			selected := selectByLRU(candidates, preferOAuth)
 			if selected == nil {
 				break
 			}
 
-			result, err := s.tryAcquireAccountSlot(ctx, selected.account.ID, selected.account.Concurrency)
+			result, err := s.tryAcquireAccountSlot(ctx, selected.account.ID, s.slotConcurrency(selected.account, windows))
 			if err == nil && result.Acquired {
 				// 会话数量限制检查
 				if !s.checkAndRegisterSession(ctx, selected.account, sessionHash) {
@@ -785,7 +792,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		}
 		return s.newSelectionResult(ctx, acc, false, nil, &AccountWaitPlan{
 			AccountID:      acc.ID,
-			MaxConcurrency: acc.Concurrency,
+			MaxConcurrency: s.slotConcurrency(acc, windows),
 			Timeout:        cfg.FallbackWaitTimeout,
 			MaxWaiting:     cfg.FallbackMaxWaiting,
 		})

@@ -809,6 +809,15 @@ type GatewayService struct {
 	tlsFPProfileService   *TLSFingerprintProfileService
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	adaptiveConcurrency   *AdaptiveConcurrencyService // 账号级自适应并发窗口（AIMD）
+}
+
+// SetAdaptiveConcurrency 注入账号级自适应并发窗口服务。
+func (s *GatewayService) SetAdaptiveConcurrency(svc *AdaptiveConcurrencyService) {
+	if s == nil {
+		return
+	}
+	s.adaptiveConcurrency = svc
 }
 
 // NewGatewayService creates a new GatewayService

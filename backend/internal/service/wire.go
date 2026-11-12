@@ -859,6 +859,137 @@ func ProvideAPIKeyService(
 	return svc
 }
 
+// ProvideGatewayService 包装 NewGatewayService 并注入账号级自适应并发窗口。
+func ProvideGatewayService(
+
+	accountRepo AccountRepository,
+	groupRepo GroupRepository,
+	usageLogRepo UsageLogRepository,
+	usageBillingRepo UsageBillingRepository,
+	userRepo UserRepository,
+	userSubRepo UserSubscriptionRepository,
+	userGroupRateRepo UserGroupRateRepository,
+	cache GatewayCache,
+	cfg *config.Config,
+	schedulerSnapshot *SchedulerSnapshotService,
+	concurrencyService *ConcurrencyService,
+	billingService *BillingService,
+	rateLimitService *RateLimitService,
+	billingCacheService *BillingCacheService,
+	identityService *IdentityService,
+	httpUpstream HTTPUpstream,
+	deferredService *DeferredService,
+	claudeTokenProvider *ClaudeTokenProvider,
+	sessionLimitCache SessionLimitCache,
+	rpmCache RPMCache,
+	digestStore *DigestSessionStore,
+	settingService *SettingService,
+	tlsFPProfileService *TLSFingerprintProfileService,
+	channelService *ChannelService,
+	resolver *ModelPricingResolver,
+	compositeResolver *CompositeRouteResolver,
+	balanceNotifyService *BalanceNotifyService,
+	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	adaptiveConcurrency *AdaptiveConcurrencyService,
+) *GatewayService {
+	svc := NewGatewayService(
+		accountRepo,
+		groupRepo,
+		usageLogRepo,
+		usageBillingRepo,
+		userRepo,
+		userSubRepo,
+		userGroupRateRepo,
+		cache,
+		cfg,
+		schedulerSnapshot,
+		concurrencyService,
+		billingService,
+		rateLimitService,
+		billingCacheService,
+		identityService,
+		httpUpstream,
+		deferredService,
+		claudeTokenProvider,
+		sessionLimitCache,
+		rpmCache,
+		digestStore,
+		settingService,
+		tlsFPProfileService,
+		channelService,
+		resolver,
+		compositeResolver,
+		balanceNotifyService,
+		userPlatformQuotaRepo,
+	)
+	svc.SetAdaptiveConcurrency(adaptiveConcurrency)
+	return svc
+}
+
+// ProvideOpenAIGatewayService 包装 NewOpenAIGatewayService 并注入账号级自适应并发窗口。
+func ProvideOpenAIGatewayService(
+
+	accountRepo AccountRepository,
+	usageLogRepo UsageLogRepository,
+	usageBillingRepo UsageBillingRepository,
+	userRepo UserRepository,
+	userSubRepo UserSubscriptionRepository,
+	userGroupRateRepo UserGroupRateRepository,
+	cache GatewayCache,
+	cfg *config.Config,
+	schedulerSnapshot *SchedulerSnapshotService,
+	concurrencyService *ConcurrencyService,
+	billingService *BillingService,
+	rateLimitService *RateLimitService,
+	billingCacheService *BillingCacheService,
+	httpUpstream HTTPUpstream,
+	deferredService *DeferredService,
+	openAITokenProvider *OpenAITokenProvider,
+	grokTokenProvider *GrokTokenProvider,
+	resolver *ModelPricingResolver,
+	channelService *ChannelService,
+	balanceNotifyService *BalanceNotifyService,
+	settingService *SettingService,
+	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	adaptiveConcurrency *AdaptiveConcurrencyService,
+) *OpenAIGatewayService {
+	svc := NewOpenAIGatewayService(
+		accountRepo,
+		usageLogRepo,
+		usageBillingRepo,
+		userRepo,
+		userSubRepo,
+		userGroupRateRepo,
+		cache,
+		cfg,
+		schedulerSnapshot,
+		concurrencyService,
+		billingService,
+		rateLimitService,
+		billingCacheService,
+		httpUpstream,
+		deferredService,
+		openAITokenProvider,
+		grokTokenProvider,
+		resolver,
+		channelService,
+		balanceNotifyService,
+		settingService,
+		userPlatformQuotaRepo,
+	)
+	svc.SetAdaptiveConcurrency(adaptiveConcurrency)
+	return svc
+}
+
+// ProvideAdaptiveConcurrencyService 由配置构造账号级自适应并发窗口服务。
+func ProvideAdaptiveConcurrencyService(store AdaptiveConcurrencyStore, cfg *config.Config) *AdaptiveConcurrencyService {
+	params := DefaultAdaptiveConcurrencyParams()
+	if cfg != nil {
+		params = AdaptiveConcurrencyParamsFromConfig(cfg.Gateway.AdaptiveConcurrency)
+	}
+	return NewAdaptiveConcurrencyService(store, params)
+}
+
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	// Core services
@@ -880,10 +1011,11 @@ var ProviderSet = wire.NewSet(
 	ProvidePricingService,
 	NewBillingService,
 	ProvideBillingCacheService,
+	ProvideAdaptiveConcurrencyService,
 	NewAnnouncementService,
 	NewAdminService,
-	NewGatewayService,
-	NewOpenAIGatewayService,
+	ProvideGatewayService,
+	ProvideOpenAIGatewayService,
 	ProvideImageStorageSettingService,
 	ProvideImageTaskService,
 	ProvideBatchImageModelPricingResolver,

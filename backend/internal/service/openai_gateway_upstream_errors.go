@@ -459,6 +459,11 @@ func (s *OpenAIGatewayService) newOpenAIAccountFailoverErrorWithClassificationHe
 		// A configured model cooldown takes precedence over capacity-shed replay.
 		failoverErr.RetryableOnSameAccount = false
 	}
+	if s != nil && s.adaptiveConcurrency != nil && s.adaptiveConcurrency.Enabled() && failoverErr.RequestScopedTransient {
+		// 自适应窗口已把容量拒绝折算成窗口收缩：在同一个已过载的账号上重试只会
+		// 继续加深上游风控计数，直接换号。
+		failoverErr.RetryableOnSameAccount = false
+	}
 	if oauth429Retry {
 		failoverErr.SameAccountRetryDeadline = s.openAIOAuth429RetryDeadline(account)
 		failoverErr.SameAccountRetryDelay = openAIOAuth429SameAccountRetryDelay(responseHeaders, failoverErr.SameAccountRetryDeadline)

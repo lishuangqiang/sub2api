@@ -513,6 +513,16 @@ type OpenAIGatewayService struct {
 	// 剥离跨账号回带（openai_codex_turn_state.go）。
 	openaiCodexTurnStateOrigins sync.Map
 	openaiCodexTurnStateWrites  atomic.Uint64
+
+	adaptiveConcurrency *AdaptiveConcurrencyService // 账号级自适应并发窗口（AIMD）
+}
+
+// SetAdaptiveConcurrency 注入账号级自适应并发窗口服务。
+func (s *OpenAIGatewayService) SetAdaptiveConcurrency(svc *AdaptiveConcurrencyService) {
+	if s == nil {
+		return
+	}
+	s.adaptiveConcurrency = svc
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
