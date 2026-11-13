@@ -212,7 +212,7 @@ func (s *GatewayService) executeBedrockUpstream(
 			})
 		}
 
-		if resp.StatusCode >= 400 && resp.StatusCode != 400 && s.shouldRetryUpstreamError(account, resp.StatusCode) {
+		if resp.StatusCode >= 400 && resp.StatusCode != 400 && s.shouldRetryUpstreamFailure(account, resp.StatusCode) {
 			if attempt < maxRetryAttempts {
 				elapsed := time.Since(retryStart)
 				if elapsed >= maxRetryElapsed {
@@ -275,7 +275,7 @@ func (s *GatewayService) handleBedrockUpstreamErrors(
 	modelKey string,
 ) (*ForwardResult, error) {
 	// retry exhausted + failover
-	if s.shouldRetryUpstreamError(account, resp.StatusCode) {
+	if s.shouldRetryUpstreamFailure(account, resp.StatusCode) {
 		if s.shouldFailoverUpstreamError(resp.StatusCode) {
 			respBody, _ := s.readUpstreamErrorBody(resp)
 			_ = resp.Body.Close()
