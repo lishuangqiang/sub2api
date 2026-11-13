@@ -240,11 +240,23 @@ func (a *Account) IsCredentialUsableForShadow() bool {
 	return true
 }
 
+// 二开：Anthropic 的 OAuth 账号在限流解除后仍会短暂返回 429，上游只按
+// RateLimitResetAt 判断，会提前放行一次请求并立刻再次撞墙。这里留一段缓冲。
+const anthropicOAuthRateLimitGrace = 30 * time.Second
+
+func (a *Account) IsAnthropicOAuth() bool {
+	return a.IsOAuth() && a.Platform == PlatformAnthropic
+}
+
 func (a *Account) IsRateLimited() bool {
 	if a.RateLimitResetAt == nil {
 		return false
 	}
-	return time.Now().Before(*a.RateLimitResetAt)
+	until := *a.RateLimitResetAt
+	if a.IsAnthropicOAuth() {
+		until = until.Add(anthropicOAuthRateLimitGrace)
+	}
+	return time.Now().Before(until)
 }
 
 func (a *Account) IsOverloaded() bool {
