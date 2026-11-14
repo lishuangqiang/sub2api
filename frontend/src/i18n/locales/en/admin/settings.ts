@@ -97,7 +97,9 @@ export default {
           adminRechargeRebateHint: 'When enabled, balance added through User Management > Deposit generates affiliate rebates. Setting a balance or withdrawing funds does not.',
           rebateRate: 'Global Rebate Rate',
           rebateRateHint: 'Default percentage given back to the inviter on recharges (0-100, e.g. 10 = 10%).',
-          freezeHours: 'Rebate Freeze Period (hours)',
+
+          usageRebateRate: 'Consumption Rebate Rate',
+          usageRebateRateHint: 'Percentage paid to the inviter on what the invitee actually consumes (0-100). Accrued from real usage, separate from the recharge rebate.',          freezeHours: 'Rebate Freeze Period (hours)',
           freezeHoursDesc: 'New rebates will be frozen for this period before becoming available for withdrawal. 0 = no freeze.',
           durationDays: 'Rebate Duration (days)',
           durationDaysDesc: 'Rebate relationship expires after this many days since invitee registration. 0 = permanent.',

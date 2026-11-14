@@ -7522,6 +7522,27 @@
 
               <div>
                 <label class="input-label">
+                  {{ t('admin.settings.features.affiliate.usageRebateRate') }}
+                </label>
+                <div class="relative">
+                  <input
+                    v-model.number="form.affiliate_usage_rebate_rate"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    class="input pr-8"
+                    placeholder="15"
+                  />
+                  <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-gray-400">%</span>
+                </div>
+                <p class="mt-1 text-xs text-gray-400">
+                  {{ t('admin.settings.features.affiliate.usageRebateRateHint') }}
+                </p>
+              </div>
+
+              <div>
+                <label class="input-label">
                   {{ t('admin.settings.features.affiliate.freezeHours') }}
                 </label>
                 <input
@@ -9763,8 +9784,9 @@ const form = reactive<SettingsForm>({
   default_balance: 0,
   default_platform_quotas: normalizePlatformQuotasMap() as DefaultPlatformQuotasMap,
   account_scheduling_thresholds: normalizeAccountSchedulingThresholdsMap(),
-  affiliate_rebate_rate: 20,
-  affiliate_rebate_freeze_hours: 0,
+  affiliate_rebate_rate: 10,
+  affiliate_usage_rebate_rate: 15,
+  affiliate_rebate_freeze_hours: 24,
   affiliate_rebate_duration_days: 0,
   affiliate_rebate_per_invitee_cap: 0,
   affiliate_admin_recharge_enabled: false,

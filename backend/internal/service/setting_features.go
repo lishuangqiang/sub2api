@@ -115,6 +115,20 @@ func (s *SettingService) GetAffiliateRebateRatePercent(ctx context.Context) floa
 	return clampAffiliateRebateRate(rate)
 }
 
+// GetAffiliateUsageRebateRatePercent 返回消费返利比例（按被邀请人实际消费计提）。
+// 解析失败、缺失或越界都回退到 AffiliateUsageRebateRateDefault。
+func (s *SettingService) GetAffiliateUsageRebateRatePercent(ctx context.Context) float64 {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateUsageRebateRate)
+	if err != nil {
+		return AffiliateUsageRebateRateDefault
+	}
+	rate, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || math.IsNaN(rate) || math.IsInf(rate, 0) {
+		return AffiliateUsageRebateRateDefault
+	}
+	return clampAffiliateRebateRate(rate)
+}
+
 // GetAffiliateRebateFreezeHours 返回返利冻结期（小时）。
 // 返回 0 表示不冻结（向后兼容）。
 func (s *SettingService) GetAffiliateRebateFreezeHours(ctx context.Context) int {

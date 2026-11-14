@@ -773,6 +773,16 @@ func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*Refu
 		return nil, fmt.Errorf("mark refund: %w", err)
 	}
 	s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", map[string]any{"refundAmount": p.RefundAmount, "reason": p.Reason, "balanceDeducted": p.BalanceToDeduct, "force": p.Force})
+	if err := s.reverseAffiliateRebateForRefund(ctx, p); err != nil {
+		// 退款已经生效，这里不能把退款判失败：记 CRITICAL + 审计，交由运维补冲销
+		// （冲销是幂等的，可以在后台重放）。
+		slog.Error("[CRITICAL] refund succeeded but affiliate rebate reversal failed",
+			"orderID", p.OrderID,
+			"userID", p.Order.UserID,
+			"error", err,
+		)
+		s.writeAuditLog(ctx, p.OrderID, "AFFILIATE_REBATE_REVERSE_FAILED", "system", map[string]any{"error": psErrMsg(err)})
+	}
 	return &RefundResult{Success: true, BalanceDeducted: p.BalanceToDeduct, SubDaysDeducted: p.SubDaysToDeduct}, nil
 }
 
@@ -797,6 +807,11 @@ func (s *PaymentService) markRefundOkTx(ctx context.Context, client *dbent.Clien
 		SetOperator("admin").
 		Save(ctx); err != nil {
 		return nil, fmt.Errorf("write refund audit: %w", err)
+	}
+	// 退款终态必须同事务冲销该订单产生的邀请返利，否则付款人退回的钱和邀请人留下的返利
+	// 会形成“充值→退款→保留返利”的套利循环。
+	if err := s.reverseAffiliateRebateForRefund(ctx, p); err != nil {
+		return nil, err
 	}
 	return &RefundResult{Success: true, BalanceDeducted: p.BalanceToDeduct, SubDaysDeducted: p.SubDaysToDeduct}, nil
 }
@@ -854,6 +869,26 @@ func (s *PaymentService) markRefundPending(ctx context.Context, p *RefundPlan, r
 		return nil, fmt.Errorf("commit mark refund pending: %w", err)
 	}
 	return &RefundResult{Success: false, Warning: "gateway refund is pending confirmation"}, nil
+}
+
+// reverseAffiliateRebateForRefund 冲销退款订单产生的邀请返利。
+// ctx 携带事务时与退款终态一起提交/回滚。
+func (s *PaymentService) reverseAffiliateRebateForRefund(ctx context.Context, p *RefundPlan) error {
+	if s == nil || s.affiliateService == nil || p == nil || p.Order == nil {
+		return nil
+	}
+	ratio := 1.0
+	if p.Order.Amount > 0 && p.RefundAmount > 0 && p.RefundAmount < p.Order.Amount {
+		ratio = p.RefundAmount / p.Order.Amount
+	}
+	reversed, err := s.affiliateService.ReverseInviteRebateForOrder(ctx, p.OrderID, p.Order.UserID, ratio)
+	if err != nil {
+		return fmt.Errorf("reverse affiliate rebate: %w", err)
+	}
+	if reversed > 0 {
+		s.writeAuditLog(ctx, p.OrderID, "AFFILIATE_REBATE_REVERSED", "system", map[string]any{"reversedAmount": reversed})
+	}
+	return nil
 }
 
 func refundResponseID(resp *payment.RefundResponse) string {

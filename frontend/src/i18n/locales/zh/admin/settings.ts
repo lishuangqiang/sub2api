@@ -97,7 +97,9 @@ export default {
           adminRechargeRebateHint: '开启后，通过“用户管理 > 充值”增加的余额会产生邀请返利；设置余额和扣款不参与返利。',
           rebateRate: '全局返利比例',
           rebateRateHint: '充值后返给邀请人的默认比例（0-100%，例如填写 10 表示返利 10%）。',
-          freezeHours: '返利冻结期（小时）',
+
+          usageRebateRate: '消费返利比例',
+          usageRebateRateHint: '好友每消费 1 元返给邀请人的比例（0-100%）。按实际消耗的额度累计，与充值返利分开计算。',          freezeHours: '返利冻结期（小时）',
           freezeHoursDesc: '新产生的返利将在冻结期内无法提现。0 = 不冻结。',
           durationDays: '返利有效期（天）',
           durationDaysDesc: '被邀请用户注册后多少天内的充值产生返利。0 = 永久有效。',

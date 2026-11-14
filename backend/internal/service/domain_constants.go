@@ -24,11 +24,12 @@ const (
 
 // Affiliate rebate settings
 const (
-	AffiliateRebateRateDefault          = 20.0
+	AffiliateRebateRateDefault          = 10.0 // 充值即返档位（第二档按消费另计）
 	AffiliateRebateRateMin              = 0.0
 	AffiliateRebateRateMax              = 100.0
+	AffiliateUsageRebateRateDefault     = 15.0  // 消费返档位：按被邀请人实际消费金额计提
 	AffiliateEnabledDefault             = false // 邀请返利总开关默认关闭
-	AffiliateRebateFreezeHoursDefault   = 0     // 0 = 不冻结（向后兼容）
+	AffiliateRebateFreezeHoursDefault   = 24    // 充值档默认冻结 24 小时
 	AffiliateRebateFreezeHoursMax       = 720   // 最大 30 天
 	AffiliateRebateDurationDaysDefault  = 0     // 0 = 永久有效
 	AffiliateRebateDurationDaysMax      = 3650  // ~10 年
@@ -233,6 +234,7 @@ const (
 	SettingKeyAffiliateRebateFreezeHours          = "affiliate_rebate_freeze_hours"    // 返利冻结期（小时，0=不冻结）
 	SettingKeyAffiliateRebateDurationDays         = "affiliate_rebate_duration_days"   // 返利有效期（天，0=永久）
 	SettingKeyAffiliateRebatePerInviteeCap        = "affiliate_rebate_per_invitee_cap" // 单人返利上限（0=无上限）
+	SettingKeyAffiliateUsageRebateRate            = "affiliate_usage_rebate_rate"      // 消费返利比例（百分比，按被邀请人实际消费计提）
 	SettingKeyAffiliateAdminRechargeEnabled       = "affiliate_admin_recharge_enabled" // 管理员充值是否产生返利
 	SettingKeyRiskControlEnabled                  = "risk_control_enabled"             // 是否启用风控中心入口与审计链路
 	SettingKeyContentModerationConfig             = "content_moderation_config"        // 内容审计配置（JSON）

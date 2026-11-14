@@ -1027,6 +1027,14 @@ func ProvidePaymentOrderExpiryService(paymentSvc *PaymentService, lockCache Lead
 	svc := NewPaymentOrderExpiryService(paymentSvc, 60*time.Second)
 	svc.SetLeaderLock(lockCache, db)
 	svc.Start()
+
+	// 邀请消费返利（第二档）的增量结算：复用同一个周期任务宿主与 leader lock，
+	// 避免为一个周期 job 单独新增 wire provider。
+	if paymentSvc != nil && paymentSvc.affiliateService != nil {
+		settlement := NewAffiliateSettlementService(paymentSvc.affiliateService, time.Minute)
+		settlement.SetLeaderLock(lockCache, db)
+		settlement.Start()
+	}
 	return svc
 }
 

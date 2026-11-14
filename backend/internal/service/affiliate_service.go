@@ -99,6 +99,25 @@ type AffiliateDetail struct {
 	Invitees                   []AffiliateInvitee `json:"invitees"`
 }
 
+// AffiliateUsageRebateOptions 消费返利结算参数。
+type AffiliateUsageRebateOptions struct {
+	// RatePercent 全局消费返利比例；邀请人配置了专属比例时以专属比例为准。
+	RatePercent float64
+	// DurationDays 返利有效期（天），0 表示永久。
+	DurationDays int
+	// PerInviteeCap 单个被邀请人累计返利上限，0 表示无上限。
+	PerInviteeCap float64
+	// BatchLimit 单次结算最多处理的用量行数，0 使用默认值。
+	BatchLimit int
+}
+
+// AffiliateUsageRebateSettlement 消费返利单次结算结果。
+type AffiliateUsageRebateSettlement struct {
+	Amount      float64
+	Pairs       int
+	LastUsageID int64
+}
+
 type AffiliateRepository interface {
 	EnsureUserAffiliate(ctx context.Context, userID int64) (*AffiliateSummary, error)
 	GetAffiliateByCode(ctx context.Context, code string) (*AffiliateSummary, error)
@@ -120,6 +139,10 @@ type AffiliateRepository interface {
 	ListAffiliateRebateRecords(ctx context.Context, filter AffiliateRecordFilter) ([]AffiliateRebateRecord, int64, error)
 	ListAffiliateTransferRecords(ctx context.Context, filter AffiliateRecordFilter) ([]AffiliateTransferRecord, int64, error)
 	GetAffiliateUserOverview(ctx context.Context, userID int64) (*AffiliateUserOverview, error)
+
+	// 消费档返利：按被邀请人实际消费增量结算；退款时按来源订单冲销。
+	SettleUsageRebate(ctx context.Context, opts AffiliateUsageRebateOptions) (AffiliateUsageRebateSettlement, error)
+	ReverseRebateForOrder(ctx context.Context, sourceOrderID, inviteeUserID int64, ratio float64) (float64, error)
 }
 
 // AffiliateAdminFilter 列表筛选条件
@@ -408,6 +431,47 @@ func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, invit
 		return 0, nil
 	}
 	return rebate, nil
+}
+
+// SettleUsageRebate 按被邀请人的实际消费计提第二档返利。
+//
+// 只结算游标之后新增的用量，重复调用不会重复发放；调用方负责传批次上限。
+func (s *AffiliateService) SettleUsageRebate(ctx context.Context, limit int) (AffiliateUsageRebateSettlement, error) {
+	if s == nil || s.repo == nil || !s.IsEnabled(ctx) {
+		return AffiliateUsageRebateSettlement{}, nil
+	}
+	opts := AffiliateUsageRebateOptions{
+		RatePercent: s.globalUsageRebateRatePercent(ctx),
+		BatchLimit:  limit,
+	}
+	if s.settingService != nil {
+		opts.DurationDays = s.settingService.GetAffiliateRebateDurationDays(ctx)
+		opts.PerInviteeCap = s.settingService.GetAffiliateRebatePerInviteeCap(ctx)
+	}
+	return s.repo.SettleUsageRebate(ctx, opts)
+}
+
+// ReverseInviteRebateForOrder 冲销订单产生的返利，必须与退款终态在同一事务内调用。
+// 没有启用返利或订单没有产生返利时是空操作。
+func (s *AffiliateService) ReverseInviteRebateForOrder(ctx context.Context, sourceOrderID, inviteeUserID int64, ratio float64) (float64, error) {
+	if s == nil || s.repo == nil || sourceOrderID <= 0 {
+		return 0, nil
+	}
+	if ratio <= 0 {
+		return 0, nil
+	}
+	if ratio > 1 {
+		ratio = 1
+	}
+	return s.repo.ReverseRebateForOrder(ctx, sourceOrderID, inviteeUserID, ratio)
+}
+
+// globalUsageRebateRatePercent 读取消费档全局比例。
+func (s *AffiliateService) globalUsageRebateRatePercent(ctx context.Context) float64 {
+	if s == nil || s.settingService == nil {
+		return AffiliateUsageRebateRateDefault
+	}
+	return s.settingService.GetAffiliateUsageRebateRatePercent(ctx)
 }
 
 // resolveRebateRatePercent returns the inviter's exclusive rate when set,

@@ -447,6 +447,14 @@ func (r *oauthEmailAffiliateRepoStub) ListAffiliateTransferRecords(context.Conte
 	panic("unexpected ListAffiliateTransferRecords call")
 }
 
+func (r *oauthEmailAffiliateRepoStub) SettleUsageRebate(context.Context, service.AffiliateUsageRebateOptions) (service.AffiliateUsageRebateSettlement, error) {
+	panic("unexpected SettleUsageRebate call")
+}
+
+func (r *oauthEmailAffiliateRepoStub) ReverseRebateForOrder(context.Context, int64, int64, float64) (float64, error) {
+	panic("unexpected ReverseRebateForOrder call")
+}
+
 func (r *oauthEmailAffiliateRepoStub) GetAffiliateUserOverview(context.Context, int64) (*service.AffiliateUserOverview, error) {
 	panic("unexpected GetAffiliateUserOverview call")
 }
